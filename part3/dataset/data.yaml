@@ -1,0 +1,11 @@
+# YOLOv5 安全帽检测数据集配置
+
+train: dataset/train/images
+val: dataset/valid/images
+test: dataset/test/images
+
+# 类别数量
+nc: 2
+
+# 类别名称
+names: ['head', 'helmet']
