@@ -1,7 +1,6 @@
 # 导入必要的库
 from typing import Any
 import os  # 操作系统接口
-# 添加 HuggingFace 国内镜像，解决数据集下载问题
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 import torch  # PyTorch 核心库
 import torch.nn.functional as F  # PyTorch 函数库
@@ -59,7 +58,7 @@ def get_dataloader(dataset_name='mnist', batch_size=128, image_size=32):
         batch_size=batch_size,  # 批次大小
         shuffle=True,  # 打乱数据
         collate_fn=collate_fn,  # 批处理函数
-        num_workers=0  # 禁用多进程，避免Windows环境下的问题
+        num_workers=0  # 禁用多进程
     )
 
 
@@ -77,7 +76,7 @@ def setup_model_and_scheduler(image_size=32, in_channels=1, device="cuda"):
     # 初始化UNet模型
     model = UNet2DModel(
         sample_size=image_size,           # 图片尺寸
-        in_channels=in_channels,          # 输入通道数 (1 for MNIST, 3 for CIFAR)
+        in_channels=in_channels,          # 输入通道数
         out_channels=in_channels,         # 输出通道数
         layers_per_block=2,               # 每个残差块的层数
         block_out_channels=(128, 256, 512, 512),  # 各层的通道数配置
@@ -132,23 +131,23 @@ def train_one_epoch(model, noise_scheduler, optimizer, dataloader, device="cuda"
         clean_images = batch["images"].to(device)
         batch_size = clean_images.shape[0]  # 批次大小
         
-        # 1. 随机采样时间步
+        # 随机采样时间步
         timesteps = torch.randint(
             0, noise_scheduler.config.num_train_timesteps, 
             (batch_size,), device=device
         ).long()  # 转换为长整型
         
-        # 2. 添加噪声 (Diffusers库已封装)
+        # 添加噪声 (Diffusers库）
         noise = torch.randn_like(clean_images)  # 生成与图像形状相同的噪声
         noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps)  # 添加噪声
         
-        # 3. 预测噪声
+        # 预测噪声
         noise_pred = model(noisy_images, timesteps, return_dict=False)[0]  # 预测噪声
         
-        # 4. 计算损失 - MSE损失
+        # 计算损失 - MSE损失
         loss = F.mse_loss(noise_pred, noise)  # 预测噪声与真实噪声的均方误差
         
-        # 5. 反向传播
+        # 反向传播
         optimizer.zero_grad()  # 清零梯度
         loss.backward()  # 计算梯度
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)  # 梯度裁剪，防止梯度爆炸
@@ -182,7 +181,7 @@ def generate_images(model, noise_scheduler, num_images=16, image_size=32, in_cha
     # 设置模型为评估模式
     model.eval()
     
-    # 1. 创建pipeline
+    # 创建pipeline
     pipeline = DDPMPipeline(
         unet=model,
         scheduler=noise_scheduler
@@ -190,13 +189,13 @@ def generate_images(model, noise_scheduler, num_images=16, image_size=32, in_cha
     # 将pipeline移到指定设备
     pipeline.to(device)
     
-    # 2. 生成图片
+    # 生成图片
     images = pipeline(
         batch_size=num_images,  # 批量生成数量
         generator=torch.Generator(device=device).manual_seed(42)  # 固定随机种子，保证可重复性
     ).images
     
-    # 3. 转换格式: PIL Image -> numpy array
+    # 转换格式: PIL Image -> numpy array
     images_np = np.stack([np.array(img) for img in images])
     
     return images_np
@@ -239,11 +238,11 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"  # 自动选择设备
     print(f"使用设备: {device}")
     
-    # 1. 准备数据
+    # 准备数据
     print("加载数据集...")
     dataloader = get_dataloader(dataset_name='mnist', batch_size=32, image_size=32)  # 减小batch_size
     
-    # 2. 初始化模型和调度器
+    # 初始化模型和调度器
     print("初始化模型...")
     model, noise_scheduler = setup_model_and_scheduler(
         image_size=32, 
@@ -251,10 +250,10 @@ def main():
         device=device
     )
     
-    # 3. 初始化优化器
+    # 初始化优化器
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)  # AdamW优化器
     
-    # 4. 训练循环
+    # 训练循环
     num_epochs = 10  # 训练轮数（减小以加快训练）
     print(f"开始训练，共{num_epochs}个epoch...")
     
@@ -285,7 +284,7 @@ def main():
             # 保存生成的图片
             save_image_grid(images, f"generated_epoch_{epoch+1}.png")
     
-    # 5. 最终生成
+    # 最终生成
     print("训练完成，生成最终结果...")
     final_images = generate_images(
         model, noise_scheduler, 
@@ -315,7 +314,7 @@ def create_denoising_animation(model, noise_scheduler, num_steps=50, device="cud
     # 设置模型为评估模式
     model.eval()
     
-    # 1. 生成初始噪声
+    # 生成初始噪声
     batch_size = 1  # 批大小为1
     image_size = 32  # 图像尺寸
     in_channels = 1  # 输入通道数
@@ -326,11 +325,11 @@ def create_denoising_animation(model, noise_scheduler, num_steps=50, device="cud
         device=device
     )
     
-    # 2. 存储每一步的结果
+    # 存储每一步的结果      
     images = []  # 存储去噪过程的图片
     x = noise.clone()  # 初始化为噪声
     
-    # 3. 逐步去噪
+    # 逐步去噪      
     # 生成时间步列表，从大到小
     timesteps = list(reversed(range(0, noise_scheduler.config.num_train_timesteps, 
                                    noise_scheduler.config.num_train_timesteps // num_steps)))
@@ -357,7 +356,7 @@ def create_denoising_animation(model, noise_scheduler, num_steps=50, device="cud
         # 打印进度
         print(f"去噪进度: {i+1}/{len(timesteps)}")
     
-    # 4. 保存为GIF
+    #保存为GIF
     images[0].save(
         "denoising_process.gif",  # 保存文件名
         save_all=True,  # 保存所有帧
@@ -371,10 +370,9 @@ def create_denoising_animation(model, noise_scheduler, num_steps=50, device="cud
 
 
 if __name__ == "__main__":
-    # 运行主函数
     model, scheduler = main()
     
     # 使用训练好的模型创建动画
-    # 注意：这里需要先定义device变量
+    # 先定义device变量
     device = "cuda" if torch.cuda.is_available() else "cpu"
     create_denoising_animation(model, scheduler, num_steps=100, device=device)

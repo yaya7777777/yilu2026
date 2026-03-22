@@ -4,7 +4,11 @@
 
 ### 1.1 Loss / Accuracy 曲线图
 
-运行 `6_2.py` 脚本后，将生成 `accuracy_comparison.png` 文件，其中包含 Linear Probing 和 Full Fine-tuning 两个阶段的测试集准确率变化曲线。
+运行 `6_final.py` 脚本后，将生成 `accuracy_comparison.png` 文件，其中包含 Linear Probing 和 Full Fine-tuning 两个阶段的测试集准确率变化曲线。
+
+*   **训练配置**：
+    *   **Linear Probing**：冻结所有参数，只训练分类头，学习率 1e-5，训练 3 个 epoch
+    *   **Full Fine-tuning**：解冻所有参数，学习率 1e-7，训练 3 个 epoch
 
 *   **预期结果**：
     *   **Linear Probing 阶段**：准确率会快速提升，因为模型在利用 ViT 强大的预训练特征来学习新的分类任务。
@@ -12,7 +16,7 @@
 
 ### 1.2 可视化结果图（原图 vs 热力图）
 
-脚本会为 `part6` 目录下的 `cat1.jpg`, `cat2.jpg`, `dog1.jpg` 分别生成对应的热力图文件：`cat1_heatmap.png`, `cat2_heatmap.png`, `dog1_heatmap.png`。
+脚本会为 `part6` 目录下的 `cat1.jpg`, `cat2.jpg`, `dog1.jpg` 分别生成对应的热力图文件：`attention_heatmap_cat1.png`, `attention_heatmap_cat2.png`, `attention_heatmap_dog1.png`。
 
 *   **预期结果**：根据任务要求，热力图的高亮区域（红色）应当尽可能地覆盖图片中的主体（例如“狗”或“猫”），而背景区域则应呈现为冷色调（蓝色）。这直观地展示了 ViT 的自注意力机制在进行分类决策时，将计算资源集中在了图像的关键对象上。
 
@@ -72,3 +76,65 @@
     *   **在大数据集上**：当提供像 ImageNet-21k 或 JFT-300M 这样拥有数千万甚至数亿张图片的数据集时，情况就反转了。ViT 能够利用其更灵活、更通用的自注意力机制，从海量数据中学习到比 CNN 内置的、相对“僵化”的归纳偏置更复杂、更强大的视觉模式。此时，CNN 的归纳偏置反而可能成为一种“天花板”，限制了模型的学习能力，而 ViT 则能“大力出奇迹”，最终达到甚至超越 CNN 的性能。
 
 **总结**：CNN 的成功很大程度上源于其为图像任务量身定做的强大归纳偏置。ViT 则放弃了这些偏置，换取了更强的模型灵活性和容量，但这要求它必须在海量数据上进行预训练，才能弥补没有“先验知识”的短板。
+
+---
+
+## 3. 代码实现细节
+
+### 3.1 注意力权重提取
+
+在 `6_final.py` 中，我们通过 Hook 函数手动提取注意力权重：
+
+```python
+def attention_hook(module, input, output):
+    global attention_weights
+    
+    # 获取输入特征
+    x = input[0]  # [batch, seq_len, hidden_dim]
+    B, N, C = x.shape
+    
+    # 计算 Q、K、V
+    qkv = module.qkv(x)
+    qkv = qkv.reshape(B, N, 3, module.num_heads, C // module.num_heads).permute(2, 0, 3, 1, 4)
+    q, k, v = qkv[0], qkv[1], qkv[2]
+    
+    # 计算注意力分数
+    attn = (q @ k.transpose(-2, -1)) * module.scale
+    attn = attn.softmax(dim=-1)
+    
+    # 保存注意力权重
+    attention_weights = attn.detach().cpu()
+```
+
+**关键技术点**：
+- ViT 的注意力层输出的是加权后的特征，不是注意力权重本身
+- 我们需要从输入重新计算注意力权重
+- 注意力权重的形状是 `[batch, num_heads, seq_len, seq_len]`
+
+### 3.2 注意力可视化
+
+```python
+# 提取 CLS token 对所有 patch 的注意力
+cls_attn = attention_weights[0, :, 0, 1:].mean(dim=0)  # 对所有头取平均
+
+# 重塑为 14x14 的网格
+attn_map = cls_attn.reshape(14, 14).numpy()
+
+# 上采样到 224x224
+attn_map = cv2.resize(attn_map, (224, 224))
+
+# 归一化并生成热力图
+attn_map = (attn_map - attn_map.min()) / (attn_map.max() - attn_map.min() + 1e-8)
+heatmap = cv2.applyColorMap(np.uint8(255 * attn_map), cv2.COLORMAP_JET)
+
+# 叠加到原始图片上
+superimposed = cv2.addWeighted(image_display, 0.6, heatmap, 0.4, 0)
+```
+
+**可视化流程**：
+1. 提取 CLS token 对所有 patch 的注意力权重
+2. 对所有注意力头取平均，获得全局注意力分布
+3. 重塑为 14x14 的网格（对应 14x14 个 patch）
+4. 上采样到 224x224，与原图大小匹配
+5. 归一化并应用颜色映射（蓝色→绿色→黄色→红色）
+6. 叠加到原始图片上，生成最终的热力图

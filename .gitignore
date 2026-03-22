@@ -1,0 +1,24 @@
+# Large model files
+*.pth
+
+# Dataset files
+*.gz
+*.zip
+*.tar
+
+# Temporary files
+__pycache__/
+*.pyc
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data directories
+part7/data/
+part7/saved_models/
+data/

@@ -1,6 +1,12 @@
 import os
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 
+import sys
+sys.stdout.flush()
+
+print("Importing libraries...")
+sys.stdout.flush()
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -12,10 +18,28 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
-print("Loading model...")
+print("Libraries imported successfully!")
+sys.stdout.flush()
+
+print(f"torch version: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+sys.stdout.flush()
+
+print("\nLoading model...")
+sys.stdout.flush()
+
 # Load pretrained ViT base model
-model = create_model('vit_base_patch16_224', pretrained=True)
-print("Model loaded successfully!")
+try:
+    model = create_model('vit_base_patch16_224', pretrained=True)
+    print("Model loaded successfully!")
+    sys.stdout.flush()
+except Exception as e:
+    print(f"Error loading model: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.stdout.flush()
+    exit(1)
+
 # Modify head: from 1000 classes to 10 classes
 features = model.head.in_features
 model.head = nn.Linear(features, 10)
@@ -38,12 +62,18 @@ transform = transforms.Compose([
                          std=[0.229, 0.224, 0.225])
 ])
 
+print("\nLoading CIFAR-10 dataset...")
+sys.stdout.flush()
+
 # Load CIFAR-10
 train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
 test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
 
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+print("Dataset loaded successfully!")
+sys.stdout.flush()
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
@@ -84,13 +114,16 @@ num_epochs = 1
 lp_train_accs = []
 lp_test_accs = []
 
-print("=== Linear Probing ===")
+print("\n=== Linear Probing ===")
+sys.stdout.flush()
+
 for epoch in range(num_epochs):
     train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
     test_acc = evaluate(model, test_loader, device)
     lp_train_accs.append(train_acc)
     lp_test_accs.append(test_acc)
     print(f"Epoch {epoch+1}/{num_epochs}, Train Acc: {train_acc:.4f}, Test Acc: {test_acc:.4f}")
+    sys.stdout.flush()
 
 # Full Fine-tuning
 for param in model.parameters():
@@ -99,6 +132,8 @@ for param in model.parameters():
 optimizer = optim.Adam(model.parameters(), lr=1e-7)
 
 print("\n=== Full Fine-tuning ===")
+sys.stdout.flush()
+
 ft_train_accs = []
 ft_test_accs = []
 
@@ -108,6 +143,7 @@ for epoch in range(num_epochs):
     ft_train_accs.append(train_acc)
     ft_test_accs.append(test_acc)
     print(f"Epoch {epoch+1}/{num_epochs}, Train Acc: {train_acc:.4f}, Test Acc: {test_acc:.4f}")
+    sys.stdout.flush()
     
 # Plot accuracy comparison
 epochs = range(1, num_epochs+1)
@@ -119,8 +155,8 @@ plt.ylabel('Accuracy')
 plt.title('Accuracy Comparison')
 plt.legend()
 plt.savefig('accuracy_comparison.png')
-print("Accuracy comparison saved to accuracy_comparison.png")
-
+print("\nAccuracy comparison saved to accuracy_comparison.png")
+sys.stdout.flush()
 
 import cv2
 from PIL import Image
@@ -146,6 +182,7 @@ last_attn_layer = model.blocks[-1].attn
 last_attn_layer.register_forward_hook(attention_hook)
 
 print("\n=== Generating Attention Heatmaps ===")
+sys.stdout.flush()
 
 # Get a few images from CIFAR-10 test set to generate attention heatmaps
 num_samples = 3
@@ -203,11 +240,16 @@ for idx in sample_indices:
                 plt.axis('off')
                 plt.savefig(f'attention_heatmap_sample_{idx}.png')
                 print(f"Attention heatmap saved to attention_heatmap_sample_{idx}.png")
+                sys.stdout.flush()
             except Exception as e:
                 print(f"Error processing sample {idx}: {e}")
+                sys.stdout.flush()
         else:
             print(f"Cannot get attention weights for sample {idx}")
+            sys.stdout.flush()
     except Exception as e:
         print(f"Error processing sample {idx}: {e}")
+        sys.stdout.flush()
 
-print("Program completed!")
+print("\nProgram completed!")
+sys.stdout.flush()
