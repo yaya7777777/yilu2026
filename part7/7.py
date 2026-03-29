@@ -1,4 +1,4 @@
-# 导入必要的库
+
 from typing import Any
 import os  # 操作系统接口
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
@@ -15,15 +15,7 @@ from PIL import Image  # 图像处理库
 
 
 def get_dataloader(dataset_name='mnist', batch_size=128, image_size=32):
-    """
-    获取数据加载器
-    参数:
-        dataset_name: 数据集名称
-        batch_size: 批次大小
-        image_size: 图像尺寸
-    返回:
-        DataLoader: 数据加载器
-    """
+    
     # 定义图像预处理管道
     transform = transforms.Compose([
         transforms.Resize((image_size, image_size)),  # 调整图像大小
@@ -63,16 +55,7 @@ def get_dataloader(dataset_name='mnist', batch_size=128, image_size=32):
 
 
 def setup_model_and_scheduler(image_size=32, in_channels=1, device="cuda"):
-    """
-    初始化UNet模型和噪声调度器
-    参数:
-        image_size: 图像尺寸
-        in_channels: 输入通道数
-        device: 运行设备
-    返回:
-        model: UNet模型
-        noise_scheduler: 噪声调度器
-    """
+
     # 初始化UNet模型
     model = UNet2DModel(
         sample_size=image_size,           # 图片尺寸
@@ -109,19 +92,15 @@ def setup_model_and_scheduler(image_size=32, in_channels=1, device="cuda"):
     return model, noise_scheduler
 
 
-def train_one_epoch(model, noise_scheduler, optimizer, dataloader, device="cuda"):
+def train(model, noise_scheduler, optimizer, dataloader, device="cuda"):
     """
-    训练一个epoch
-    参数:
-        model: UNet模型
-        noise_scheduler: 噪声调度器
-        optimizer: 优化器
-        dataloader: 数据加载器
-        device: 运行设备
-    返回:
-        float: 平均损失
+    
+    1. 随机采样干净图像和时间步
+    2. 生成随机高斯噪声并添加到图像中，得到带噪图像
+    3. 让模型预测噪声
+    4. 计算预测噪声与真实噪声的MSE损失
+    5. 反向传播并更新模型参数
     """
-    # 设置模型为训练模式
     model.train()
     total_loss = 0  # 总损失
     
@@ -144,16 +123,16 @@ def train_one_epoch(model, noise_scheduler, optimizer, dataloader, device="cuda"
         # 预测噪声
         noise_pred = model(noisy_images, timesteps, return_dict=False)[0]  # 预测噪声
         
-        # 计算损失 - MSE损失
+        # 计算损失：MSE损失
         loss = F.mse_loss(noise_pred, noise)  # 预测噪声与真实噪声的均方误差
         
         # 反向传播
-        optimizer.zero_grad()  # 清零梯度
-        loss.backward()  # 计算梯度
+        optimizer.zero_grad()
+        loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)  # 梯度裁剪，防止梯度爆炸
-        optimizer.step()  # 更新参数
+        optimizer.step()
         
-        total_loss += loss.item()  # 累加损失
+        total_loss += loss.item()
         
         # 每100步打印进度
         if step % 100 == 0:
@@ -165,19 +144,8 @@ def train_one_epoch(model, noise_scheduler, optimizer, dataloader, device="cuda"
 
 @torch.no_grad()  # 禁用梯度计算，节省内存
 
-def generate_images(model, noise_scheduler, num_images=16, image_size=32, in_channels=1, device="cuda"):
-    """
-    生成新图片
-    参数:
-        model: UNet模型
-        noise_scheduler: 噪声调度器
-        num_images: 生成图片数量
-        image_size: 图像尺寸
-        in_channels: 输入通道数
-        device: 运行设备
-    返回:
-        numpy.array: 生成的图片数组
-    """
+def generate_images(model, noise_scheduler, num_images=16, image_size=32, in_channels=3, device="cuda"):
+
     # 设置模型为评估模式
     model.eval()
     
@@ -202,13 +170,7 @@ def generate_images(model, noise_scheduler, num_images=16, image_size=32, in_cha
 
 
 def save_image_grid(images, filename="generated_grid.png", ncols=4):
-    """
-    保存图片网格
-    参数:
-        images: 图片数组
-        filename: 保存文件名
-        ncols: 列数
-    """
+
     # 计算行数
     nrows = len(images) // ncols
     # 创建画布和子图
@@ -225,25 +187,20 @@ def save_image_grid(images, filename="generated_grid.png", ncols=4):
     
     # 调整布局
     plt.tight_layout()
-    # 保存图片
     plt.savefig(filename, dpi=150, bbox_inches='tight')
-    # 显示图片
     plt.show()
-    # 打印保存路径
     print(f"已保存到: {filename}")
 
 
 def main():
+
     # 配置
-    device = "cuda" if torch.cuda.is_available() else "cpu"  # 自动选择设备
-    print(f"使用设备: {device}")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     
     # 准备数据
-    print("加载数据集...")
     dataloader = get_dataloader(dataset_name='mnist', batch_size=32, image_size=32)  # 减小batch_size
     
     # 初始化模型和调度器
-    print("初始化模型...")
     model, noise_scheduler = setup_model_and_scheduler(
         image_size=32, 
         in_channels=1,  # MNIST是灰度图
@@ -254,19 +211,15 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)  # AdamW优化器
     
     # 训练循环
-    num_epochs = 10  # 训练轮数（减小以加快训练）
-    print(f"开始训练，共{num_epochs}个epoch...")
+    num_epochs = 10
     
     for epoch in range(num_epochs):
         # 训练一个epoch
-        avg_loss = train_one_epoch(model, noise_scheduler, optimizer, dataloader, device)
+        avg_loss = train(model, noise_scheduler, optimizer, dataloader, device)
         
-        # 打印进度
         print(f"Epoch {epoch+1}/{num_epochs} | Loss: {avg_loss:.4f}")
-        
-        # 每2个epoch生成并保存样本
+ 
         if (epoch + 1) % 2 == 0 or epoch == 0:
-            print(f"生成样本...")
             images = generate_images(
                 model, noise_scheduler, 
                 num_images=16, 
@@ -279,13 +232,11 @@ def main():
             model_dir = "saved_models"  # 模型保存目录
             os.makedirs(model_dir, exist_ok=True)  # 创建目录（如果不存在）
             torch.save(model.state_dict(), f"{model_dir}/model_epoch_{epoch+1}.pth")  # 保存模型权重
-            print(f"模型已保存到: {model_dir}/model_epoch_{epoch+1}.pth")
             
             # 保存生成的图片
             save_image_grid(images, f"generated_epoch_{epoch+1}.png")
     
-    # 最终生成
-    print("训练完成，生成最终结果...")
+    # 最终生成样本
     final_images = generate_images(
         model, noise_scheduler, 
         num_images=16, 
@@ -300,18 +251,8 @@ def main():
 
 @torch.no_grad()  # 禁用梯度计算
 
-def create_denoising_animation(model, noise_scheduler, num_steps=50, device="cuda"):
-    """
-    创建去噪过程的动画
-    参数:
-        model: UNet模型
-        noise_scheduler: 噪声调度器
-        num_steps: 动画步数
-        device: 运行设备
-    返回:
-        list: 去噪过程中的图片列表
-    """
-    # 设置模型为评估模式
+def create_animation(model, noise_scheduler, num_steps=50, device="cuda"):
+
     model.eval()
     
     # 生成初始噪声
@@ -375,4 +316,4 @@ if __name__ == "__main__":
     # 使用训练好的模型创建动画
     # 先定义device变量
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    create_denoising_animation(model, scheduler, num_steps=100, device=device)
+    create_animation(model, scheduler, num_steps=100, device=device)
