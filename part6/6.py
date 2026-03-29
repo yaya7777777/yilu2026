@@ -237,5 +237,19 @@ for image_file in image_files:
     output_filename = f'attention_heatmap_{image_file.replace(".jpg", "")}.png'
     plt.savefig(output_filename)
     print(f"Saved: {output_filename}")
+    
+def main():
+    # 设置设备
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    # 加载预训练模型
+    model = create_model('vit_base_patch16_224', pretrained=True)
+    features = model.head.in_features
+    model.head = nn.Linear(features, 10)
+    model = model.to(device)
+
+if __name__ == "__main__":
+    main()
 
 print("\n=== All Done! ===")

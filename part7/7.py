@@ -1,17 +1,22 @@
-
-from typing import Any
+import sys
 import os  # 操作系统接口
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 import torch  # PyTorch 核心库
 import torch.nn.functional as F  # PyTorch 函数库
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端
 import matplotlib.pyplot as plt  # 用于绘制和保存图片
 from torchvision import transforms  # 图像预处理工具
 from diffusers import DDPMPipeline, DDPMScheduler, UNet2DModel  # 扩散模型相关库
 from diffusers.optimization import get_cosine_schedule_with_warmup  # 余弦学习率调度器
 from torch.utils.data import DataLoader  # 数据加载器
-from datasets import load_dataset  # 加载数据集
+from torchvision.datasets import MNIST  # MNIST数据集
 import numpy as np  # 数值计算库
 from PIL import Image  # 图像处理库
+
+def flush_print(msg):
+    print(msg)
+    sys.stdout.flush()
 
 
 def get_dataloader(dataset_name='mnist', batch_size=128, image_size=32):
@@ -24,32 +29,14 @@ def get_dataloader(dataset_name='mnist', batch_size=128, image_size=32):
     ])
     
     # 加载MNIST数据集
-    dataset = load_dataset("mnist", split="train")
-   
-    # 预处理函数
-    def preprocess(examples):
-        # 处理每张图像，确保是灰度图
-        images = [transform(image.convert("L") if image.mode != "RGB" else image) 
-                 for image in examples["image"]]
-        return {"pixel_values": images}
-    
-    # 设置数据集的预处理函数
-    dataset.set_transform(preprocess)
-    
-    # 自定义数据批处理函数
-    def collate_fn(examples):
-        # 堆叠图像张量
-        images = torch.stack([example["pixel_values"] for example in examples])
-        # 转换为连续内存格式并转换为float类型
-        images = images.to(memory_format=torch.contiguous_format).float()
-        return {"images": images}
+    from torchvision.datasets import MNIST
+    dataset = MNIST(root='./data', train=True, transform=transform, download=True)
     
     # 创建并返回数据加载器
     return DataLoader(
         dataset, 
         batch_size=batch_size,  # 批次大小
         shuffle=True,  # 打乱数据
-        collate_fn=collate_fn,  # 批处理函数
         num_workers=0  # 禁用多进程
     )
 
@@ -107,7 +94,9 @@ def train(model, noise_scheduler, optimizer, dataloader, device="cuda"):
     # 遍历数据加载器
     for step, batch in enumerate(dataloader):
         # 获取干净图像并移到指定设备
-        clean_images = batch["images"].to(device)
+        # MNIST数据集返回的是(images, labels)元组
+        clean_images, _ = batch
+        clean_images = clean_images.to(device)
         batch_size = clean_images.shape[0]  # 批次大小
         
         # 随机采样时间步
@@ -134,9 +123,9 @@ def train(model, noise_scheduler, optimizer, dataloader, device="cuda"):
         
         total_loss += loss.item()
         
-        # 每100步打印进度
-        if step % 100 == 0:
-            print(f"Step {step}: Loss = {loss.item():.4f}")
+        # 每50步打印进度
+        if step % 50 == 0:
+            print(f"Step {step}: Loss = {loss.item():.6f}")
     
     # 返回平均损失
     return total_loss / len(dataloader)
@@ -196,22 +185,29 @@ def main():
 
     # 配置
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    flush_print(f"使用设备: {device}")
+    flush_print("开始准备数据...")
     
     # 准备数据
     dataloader = get_dataloader(dataset_name='mnist', batch_size=32, image_size=32)  # 减小batch_size
+    flush_print(f"数据加载器创建完成，批次大小: 32")
     
     # 初始化模型和调度器
+    flush_print("开始初始化模型和调度器...")
     model, noise_scheduler = setup_model_and_scheduler(
         image_size=32, 
         in_channels=1,  # MNIST是灰度图
         device=device
     )
+    flush_print("模型和调度器初始化完成")
     
     # 初始化优化器
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)  # AdamW优化器
+    flush_print("优化器初始化完成")
     
     # 训练循环
     num_epochs = 10
+    flush_print(f"开始训练，共 {num_epochs} 个epoch")
     
     for epoch in range(num_epochs):
         # 训练一个epoch
@@ -305,8 +301,6 @@ def create_animation(model, noise_scheduler, num_steps=50, device="cuda"):
         duration=100,  # 每帧100ms
         loop=0  # 无限循环
     )
-    print("去噪动画已保存为: denoising_process.gif")
-    
     return images
 
 
